@@ -1,0 +1,47 @@
+# ===== 编译输出（Keil / EIDE）=====
+/Objects/
+/Listings/
+/build/
+/bin/
+/obj/
+/out/
+RTE/
+*.o
+*.d
+*.crf
+*.dep
+*.axf
+*.hex
+*.bin
+*.map
+*.lst
+*.lnp
+*.sct
+*.iex
+*.bak
+*.tmp
+
+# ===== Keil 用户界面布局（每台机器不同，体积大）=====
+*.uvguix.*
+*.uvguix
+
+# ===== EIDE 本地缓存 / 日志 =====
+/.eide/log
+/.eide.usr.ctx.json
+*.ept
+*.eide-template
+
+# ===== CMSIS 器件包（约 30MB，由 EIDE 自动下载，不入库）=====
+/.cmsis/
+
+# ===== VSCode 本地状态 =====
+/.vscode/launch.json
+/.vscode/keil-assistant.log
+/.vscode/uv4.log.lock
+/.settings
+
+# ===== 系统垃圾 =====
+Thumbs.db
+desktop.ini
+.DS_Store
+JLinkLog.txt
