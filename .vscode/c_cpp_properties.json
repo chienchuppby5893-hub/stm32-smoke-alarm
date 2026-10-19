@@ -3,11 +3,11 @@
         {
             "name": "Target 1",
             "includePath": [
-                "e:\\江协\\2.2 OLED-V2.0 -烟雾-温湿度-报警\\UTF-8\\01-OLED功能函数测试-4针脚I2C接口\\Start",
-                "e:\\江协\\2.2 OLED-V2.0 -烟雾-温湿度-报警\\UTF-8\\01-OLED功能函数测试-4针脚I2C接口\\Library",
-                "e:\\江协\\2.2 OLED-V2.0 -烟雾-温湿度-报警\\UTF-8\\01-OLED功能函数测试-4针脚I2C接口\\User",
-                "e:\\江协\\2.2 OLED-V2.0 -烟雾-温湿度-报警\\UTF-8\\01-OLED功能函数测试-4针脚I2C接口\\System",
-                "e:\\江协\\2.2 OLED-V2.0 -烟雾-温湿度-报警\\UTF-8\\01-OLED功能函数测试-4针脚I2C接口\\Hardware",
+                "${workspaceFolder}/Start",
+                "${workspaceFolder}/Library",
+                "${workspaceFolder}/User",
+                "${workspaceFolder}/System",
+                "${workspaceFolder}/Hardware",
                 "E:\\MDK5\\ARM\\ARMCC\\include",
                 "E:\\MDK5\\ARM\\ARMCC\\include\\arm_linux",
                 "E:\\MDK5\\ARM\\ARMCC\\include\\arm_linux_compat",
