@@ -1,0 +1,18 @@
+# 统一行尾：源码在仓库里存 LF，检出到 Windows 时按文件类型还原
+* text=auto eol=lf
+
+# Keil / 批处理文件必须 CRLF，否则 Keil 打开可能报错
+*.uvprojx text eol=crlf
+*.uvoptx  text eol=crlf
+*.uvguix  text eol=crlf
+*.bat     text eol=crlf
+*.c       text eol=crlf
+*.h       text eol=crlf
+*.s       text eol=crlf
+
+# 二进制文件不做行尾转换
+*.hex binary
+*.bin binary
+*.axf binary
+*.o   binary
+*.crf binary
