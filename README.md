@@ -1,5 +1,8 @@
 # STM32 烟雾 + 温湿度 监测报警系统
 
+[![Release](https://img.shields.io/github/v/release/chienchuppby5893-hub/stm32-smoke-alarm)](https://github.com/chienchuppby5893-hub/stm32-smoke-alarm/releases)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 基于 **STM32F103C8T6** + **标准外设库（StdPeriph）** 的环境监测小项目：
 DHT11 采集温湿度、MQ-2 采集烟雾浓度、0.96 寸 OLED 实时显示，浓度超标时蜂鸣器长鸣 + LED 常亮。
 
@@ -67,6 +70,10 @@ OLED 显示三行：`TEMP / HUMI`、`SMOKE` 数值、`Status: Normal / ALARM!`�
 ## 参考与致谢
 
 工程结构与驱动框架参考**江协科技 STM32 入门教程**，在此基础上完成传感器接入、Display 显示模块封装、报警回差与容错处理。
+
+## 版本记录
+
+当前版本 **v0.10.0**（首个公开版本），完整记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License
 
