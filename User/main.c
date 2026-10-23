@@ -5,6 +5,7 @@
 #include "MQ2.h"
 #include "LED.h"
 #include "Buzzer.h"
+#include "Serial.h"
 
 /*
  * 程序功能：烟雾 + 温湿度 监测报警
@@ -13,6 +14,7 @@
  *   MQ2   ：AO=PA0（ADC1_IN0，5V供电时必须分压），DO=PA1（本工程用模拟量模式）
  *   LED   ：板载LED PC13（超标常亮）
  *   蜂鸣器：PB12（超标长鸣）
+ *   串口  ：USART1，PA9=TX / PA10=RX，9600-8-N-1，每个采集周期上报一行
  *
  * 报警逻辑：烟雾ADC值超过阈值 → 蜂鸣器长鸣 + LED常亮；
  *           降回阈值以下 → 蜂鸣器和LED都关闭。
@@ -32,6 +34,55 @@ static Display_Data_t Display_Data;		/*交给显示模块的数据*/
 static uint8_t AlarmState = 0;			/*当前报警状态，1=正在报警*/
 
 /**
+  * 函    数：串口上报一次采集结果
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：每个采集周期输出一行，方便用串口助手（9600,N,8,1）观察趋势和排查问题
+  *           正常输出：   #12 T=26.0C H=65.0% Smoke=1234(thr=1500) Normal
+  *           报警输出：   #13 T=26.1C H=64.0% Smoke=1702(thr=1500) ALARM
+  *           读取失败：   #14 T=--.-C H=--.-% Smoke=1702(thr=1500) ALARM DHT11_ERR=1
+  * 注意事项：1. Serial_Printf 内部缓冲区只有100字节，单行输出不要超过这个长度
+  *           2. 串口是查询方式发送，9600bps 下每字节约1ms，整行约60ms，会占用主循环时间
+  */
+static void Serial_Report(void)
+{
+	static uint16_t Count = 0;					/*上报序号，方便核对采集周期有没有丢*/
+	const char *AlarmStr = "Normal";			/*报警状态文字*/
+
+	Count ++;
+	if (Display_Data.SmokeAlarm)
+	{
+		AlarmStr = "ALARM";
+	}
+
+	/*温湿度：只有读到有效数据才打印数值，没读到就打占位符，避免把上一次的旧值当成新值*/
+	if (Display_Data.EnvValid)
+	{
+		Serial_Printf("#%d T=%d.%dC H=%d.%d%% Smoke=%d(thr=%d) %s",
+		              (int)Count,
+		              (int)Display_Data.TempInt, (int)Display_Data.TempDec,
+		              (int)Display_Data.HumiInt, (int)Display_Data.HumiDec,
+		              (int)Display_Data.SmokeAdc, (int)MQ2_ALARM_THRESHOLD,
+		              AlarmStr);
+	}
+	else
+	{
+		Serial_Printf("#%d T=--.-C H=--.-%% Smoke=%d(thr=%d) %s",
+		              (int)Count,
+		              (int)Display_Data.SmokeAdc, (int)MQ2_ALARM_THRESHOLD,
+		              AlarmStr);
+	}
+
+	/*温湿度读取失败时把状态码追加在行尾，对照 DHT11.h 的返回值定义就能知道失败原因*/
+	if (Display_Data.EnvStatus != DHT11_OK)
+	{
+		Serial_Printf(" DHT11_ERR=%d", (int)Display_Data.EnvStatus);
+	}
+
+	Serial_Printf("\r\n");
+}
+
+/**
   * 函    数：主函数
   * 参    数：无
   * 返 回 值：无
@@ -46,6 +97,7 @@ int main(void)
 	MQ2_Init();							/*MQ2初始化，内部等待预热*/
 	LED_Init();							/*LED初始化，默认熄灭*/
 	Buzzer_Init();						/*蜂鸣器初始化，默认不响*/
+	Serial_Init();						/*串口初始化，USART1 9600-8-N-1，仅发送不再关心接收标志*/
 
 	while (1)
 	{
@@ -99,7 +151,10 @@ int main(void)
 			Buzzer_Off();
 		}
 
-		/*5.刷新显示（函数内部会调用OLED_Update把显存推送到屏幕）*/
+		/*5.串口上报本次采集结果*/
+		Serial_Report();
+
+		/*6.刷新显示（函数内部会调用OLED_Update把显存推送到屏幕）*/
 		Display_Render(&Display_Data);
 
 		Delay_ms(1500);					/*DHT11采样周期不能小于1s，这里取1.5s*/
