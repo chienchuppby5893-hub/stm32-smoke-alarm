@@ -27,11 +27,18 @@
 /*超过阈值就报警，要降到 (阈值 - 回差) 以下才解除；设为0就是不用回差*/
 #define ALARM_HYSTERESIS	100
 
+/*上报周期(ms)：手机按 P 在这两个值之间切换*/
+#define REPORT_PERIOD_FAST	1500		/*DHT11采样周期不能小于1s*/
+#define REPORT_PERIOD_SLOW	5000
+
 /*全局变量*********************/
 
 static DHT11_Data_t DHT11_Data;			/*DHT11的原始读取结果*/
 static Display_Data_t Display_Data;		/*交给显示模块的数据*/
 static uint8_t AlarmState = 0;			/*当前报警状态，1=正在报警*/
+static uint8_t MuteFlag = 0;			/*1=静音（LED照常亮，蜂鸣器不响），手机按 M 切换*/
+static uint16_t ReportPeriod = REPORT_PERIOD_FAST;	/*当前上报周期*/
+static uint8_t ForceRefresh = 0;		/*1=手机点了"立即刷新"，提前结束本次等待*/
 
 /**
   * 函    数：串口上报一次采集结果
@@ -80,6 +87,105 @@ static void Serial_Report(void)
 	}
 
 	Serial_Printf("\r\n");
+
+	/*再发一行给手机 APP 解析的机器可读格式：D,温度,湿度,烟雾ADC,阈值,报警*/
+	/*APP 按逗号切分，字段顺序固定；温湿度没读到时发 --.-（APP 会显示成占位符）*/
+	if (Display_Data.EnvValid)
+	{
+		Serial_Printf("D,%d.%d,%d.%d,%d,%d,%d\r\n",
+		              (int)Display_Data.TempInt, (int)Display_Data.TempDec,
+		              (int)Display_Data.HumiInt, (int)Display_Data.HumiDec,
+		              (int)Display_Data.SmokeAdc, (int)MQ2_ALARM_THRESHOLD,
+		              (int)Display_Data.SmokeAlarm);
+	}
+	else
+	{
+		Serial_Printf("D,--.-,--.-,%d,%d,%d\r\n",
+		              (int)Display_Data.SmokeAdc, (int)MQ2_ALARM_THRESHOLD,
+		              (int)Display_Data.SmokeAlarm);
+	}
+}
+
+/**
+  * 函    数：处理手机 App 发来的命令
+  * 参    数：无
+  * 返 回 值：无
+  * 说    明：手机点按钮会发 "@X\r\n"（X 是命令字母）。Serial 模块负责收包，
+  *           收完整一行后把内容放进 Serial_RxPacket 并把 Serial_RxFlag 置 1，
+  *           这里取出来按首字母执行。加新按钮就在 switch 里加个 case，
+  *           同时改手机 App 里那个按钮的"发送内容"。
+  *             @Q=立即刷新  @M=静音  @R=恢复声音  @S=再发一帧  @P=切换上报周期
+  */
+static void App_HandleCommand(void)
+{
+	char Cmd;
+
+	if (Serial_RxFlag == 0)
+	{
+		return;							/*没有待处理的命令*/
+	}
+
+	Cmd = Serial_RxPacket[0];			/*只认第一个字符，后面可以带参数暂不解析*/
+	Serial_RxFlag = 0;					/*清标志，允许接收下一条*/
+
+	switch (Cmd)
+	{
+		case 'Q':						/*立即刷新：提前结束本次等待，马上重新采集*/
+			ForceRefresh = 1;
+			Serial_Printf("ACK,Q\r\n");
+			break;
+
+		case 'M':						/*静音蜂鸣器，LED 照常按报警状态亮*/
+			MuteFlag = 1;
+			Serial_Printf("ACK,M\r\n");
+			break;
+
+		case 'R':						/*恢复声音*/
+			MuteFlag = 0;
+			Serial_Printf("ACK,R\r\n");
+			break;
+
+		case 'S':						/*把当前这帧数据再发一次，不重新采集*/
+			Serial_Report();
+			break;
+
+		case 'P':						/*切换上报周期：快(1.5s) ↔ 慢(5s)*/
+			if (ReportPeriod == REPORT_PERIOD_FAST)
+			{
+				ReportPeriod = REPORT_PERIOD_SLOW;
+			}
+			else
+			{
+				ReportPeriod = REPORT_PERIOD_FAST;
+			}
+			Serial_Printf("ACK,P,%d\r\n", (int)ReportPeriod);
+			break;
+
+		default:
+			Serial_Printf("ERR,UNKNOWN\r\n");
+			break;
+	}
+}
+
+/**
+  * 函    数：等待指定毫秒，等待期间照样响应手机命令
+  * 参    数：Ms 要等待的毫秒数
+  * 返 回 值：无
+  * 说    明：把一大段 Delay_ms 切成 50ms 一小段，每小段之间取一次命令，
+  *           这样手机上点按钮最多 50ms 就有反应，而不是等完整个上报周期
+  */
+static void WaitWithApp(uint16_t Ms)
+{
+	uint16_t Step;
+
+	while (Ms > 0 && ForceRefresh == 0)
+	{
+		Step = (Ms > 50) ? 50 : Ms;		/*最后不足50ms就按剩下的等*/
+		Delay_ms(Step);
+		Ms -= Step;
+		App_HandleCommand();			/*等待期间处理手机命令*/
+	}
+	ForceRefresh = 0;					/*消费掉"立即刷新"请求*/
 }
 
 /**
@@ -139,11 +245,18 @@ int main(void)
 
 		Display_Data.SmokeAlarm = AlarmState;		/*交给显示模块显示 Normal / ALARM! */
 
-		/*4.报警输出：超标就蜂鸣器长鸣 + LED常亮，否则都关闭*/
+		/*4.报警输出：超标就LED常亮；蜂鸣器是否响取决于手机上有没有点过"静音"*/
 		if (AlarmState)
 		{
 			LED_On();
-			Buzzer_On();
+			if (MuteFlag == 0)
+			{
+				Buzzer_On();
+			}
+			else
+			{
+				Buzzer_Off();
+			}
 		}
 		else
 		{
@@ -151,12 +264,13 @@ int main(void)
 			Buzzer_Off();
 		}
 
-		/*5.串口上报本次采集结果*/
+		/*5.串口上报本次采集结果（先一行给人看，再一行给手机App解析）*/
 		Serial_Report();
 
 		/*6.刷新显示（函数内部会调用OLED_Update把显存推送到屏幕）*/
 		Display_Render(&Display_Data);
 
-		Delay_ms(1500);					/*DHT11采样周期不能小于1s，这里取1.5s*/
+		/*7.等到下一个周期，等待期间照样处理手机按钮，点按钮最多50ms就有反应*/
+		WaitWithApp(ReportPeriod);
 	}
 }
