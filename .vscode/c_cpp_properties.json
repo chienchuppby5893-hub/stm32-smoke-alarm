@@ -3,11 +3,11 @@
         {
             "name": "Target 1",
             "includePath": [
-                "e:\\gitcommit\\stm32-smoke-alarm\\Start",
-                "e:\\gitcommit\\stm32-smoke-alarm\\Library",
-                "e:\\gitcommit\\stm32-smoke-alarm\\User",
-                "e:\\gitcommit\\stm32-smoke-alarm\\System",
-                "e:\\gitcommit\\stm32-smoke-alarm\\Hardware",
+                "${workspaceFolder}/Start",
+                "${workspaceFolder}/Library",
+                "${workspaceFolder}/User",
+                "${workspaceFolder}/System",
+                "${workspaceFolder}/Hardware",
                 "E:\\MDK5\\ARM\\ARMCC\\include",
                 "E:\\MDK5\\ARM\\ARMCC\\include\\arm_linux",
                 "E:\\MDK5\\ARM\\ARMCC\\include\\arm_linux_compat",

@@ -13,6 +13,8 @@ DHT11 采集温湿度、MQ-2 采集烟雾浓度、0.96 寸 OLED 实时显示，�
 - **阈值报警**：ADC 值超过阈值 → 蜂鸣器长鸣 + LED 常亮；降回阈下 → 自动解除
 - **报警回差**：回差 100，避免读数卡在阈值附近时报警反复开关
 - **容错显示**：DHT11 读取失败时保留上一次有效数据，状态行提示错误，不会花屏
+- **串口上报**：每个采集周期通过 USART1（9600-8-N-1）输出一行人读日志 + 一行机器可读数据 `D,温,湿,烟雾,阈值,报警`
+- **手机 App 控制**：外接蓝牙模块，手机发 `@X` 命令即可立即刷新 / 静音 / 恢复声音 / 重发 / 切换上报周期
 
 ## 系统框图
 
@@ -24,6 +26,8 @@ flowchart LR
     MCU -->|"I2C PB8 / PB9"| OLED["0.96 寸 OLED<br/>温湿度 / 烟雾值 / 状态"]
     MCU -->|"GPIO PB12"| BUZ["有源蜂鸣器<br/>超标长鸣"]
     MCU -->|"GPIO PC13"| LED["板载 LED<br/>超标常亮"]
+    MCU <-->|"USART1 PA9/PA10<br/>9600-8-N-1"| BT["蓝牙模块<br/>HC-05/06"]
+    BT <--> APP["手机 App<br/>看数据 / 点按钮发命令"]
 ```
 
 报警判断带 **100 回差**：超过阈值进入报警，降到「阈值 − 100」以下才解除，避免读数在阈值附近抖动导致报警反复开关。
@@ -37,6 +41,7 @@ flowchart LR
 | MQ-2 烟雾 | AO→PA0（ADC1_IN0） | **必须 5V 供电**；AO 需分压后再接 |
 | LED | PC13 | 板载 LED |
 | 蜂鸣器 | I/O→PB12 | 有源蜂鸣器（江协模块低电平响） |
+| 蓝牙模块（HC-05/06 等） | 模块 TXD→PA10，模块 RXD→PA9 | USART1，9600-8-N-1；HC-05 常用 5V 供电 |
 
 > ⚠️ MQ-2 用 5V 供电时 AO 最高接近 5V，而 PA0 在模拟输入模式下**不耐 5V**，直接接会过压。
 > 三种处理方式（详见 [Hardware/MQ2.h](Hardware/MQ2.h) 注释）：
@@ -44,19 +49,42 @@ flowchart LR
 > 2. VCC 改接 3.3V（安全但灵敏度下降）
 > 3. `MQ2_MODE` 改 0，DO 接 PA8（5V 容忍引脚，但只有开关量）
 
+## 串口协议（手机 App 通信）
+
+**下位机上报**：每个采集周期输出两行（9600-8-N-1）
+
+```
+#12 T=26.0C H=65.0% Smoke=1234(thr=1500) Normal   ← 人读日志，可直接用串口助手看
+D,26.0,65.0,1234,1500,0                          ← App 解析用：温,湿,烟雾 ADC,阈值,报警
+```
+
+温湿度读取失败时，日志行末尾追加 `DHT11_ERR=<错误码>`，数值行用 `--.-` 占位。
+
+**手机下发命令**：格式 `@` + 命令字母 + `\r\n`
+
+| 命令 | 作用 | 回包 |
+|---|---|---|
+| `@Q` | 立即刷新（提前结束本次等待，马上重新采集） | `ACK,Q` |
+| `@M` | 静音（LED 照常按报警状态亮，蜂鸣器不响） | `ACK,M` |
+| `@R` | 恢复声音 | `ACK,R` |
+| `@S` | 立即重发当前一帧，不重新采集 | 数据行 |
+| `@P` | 快 / 慢上报周期切换（1.5 s ↔ 5 s） | `ACK,P,周期` |
+| 其他 | 未知命令 | `ERR,UNKNOWN` |
+
+> 等待上报周期时按 50 ms 切片轮询命令，所以手机上点按钮最多 50 ms 就有响应，不用等完整个周期。
 ## 目录结构
 
 ```
 Project.uvprojx      Keil5 工程文件
 User/                main.c（采集→判断→显示主流程）、中断、库配置
-Hardware/            OLED / DHT11 / MQ2 / Buzzer / LED / ADC / Display 驱动
+Hardware/            OLED / DHT11 / MQ2 / Buzzer / LED / ADC / Display / Serial 驱动
 System/              Delay 延时
 Start/               CMSIS 内核文件 + STM32F10x 启动文件
 Library/             ST 标准外设库
 DHT11程序说明.md      DHT11 单总线时序与调试说明
 ```
 
-主流程非常短，全部在 [User/main.c](User/main.c)：初始化 → 循环（读 DHT11 → 读 MQ-2 → 判断报警 → 输出 → 刷新 OLED）。
+主流程非常短，全部在 [User/main.c](User/main.c)：初始化 → 循环（读 DHT11 → 读 MQ-2 → 判断报警 → 输出 → 串口上报 → 刷新 OLED → 带命令响应的等待）。
 
 ## 编译与烧录
 
@@ -73,6 +101,8 @@ DHT11程序说明.md      DHT11 单总线时序与调试说明
 | MQ-2 预热时间 | `Hardware/MQ2.h` → `MQ2_WARMUP_MS` | 20000 |
 | 报警回差 | `User/main.c` → `ALARM_HYSTERESIS` | 100 |
 | 蜂鸣器有效电平 | `Hardware/Buzzer.h` → `BUZZER_ON_LEVEL` | 0 |
+| 上报周期（快 / 慢，手机 @P 切换） | `User/main.c` → `REPORT_PERIOD_FAST` / `REPORT_PERIOD_SLOW` | 1500 / 5000 ms |
+| 串口波特率 | `Hardware/Serial.c` → `USART_BaudRate` | 9600 |
 
 > 阈值需要实测：预热后在洁净空气中观察 ADC 稳定值，阈值取比它明显高一些的数值。
 
@@ -87,7 +117,7 @@ OLED 显示三行：`TEMP / HUMI`、`SMOKE` 数值、`Status: Normal / ALARM!`�
 
 ## 版本记录
 
-当前版本 **v0.10.0**（首个公开版本），完整记录见 [CHANGELOG.md](CHANGELOG.md)。
+当前版本 **v0.11.0**（串口上报 + 手机 App 控制），完整记录见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## License
 
